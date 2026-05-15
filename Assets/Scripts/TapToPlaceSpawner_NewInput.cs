@@ -7,55 +7,113 @@ using System.Collections.Generic;
 public class TapToPlace : MonoBehaviour
 {
     public ARRaycastManager raycastManager;
-    public GameObject cubePrefab;              // assign your cube prefab here
-    public ARModelManager modelManager;        // assign the object with ARModelManager
+    public ARPlaneManager planeManager; // ADDED: Needed to check if planes exist
+    public GameObject cubePrefab;
+    public GameObject spherePrefab;
+    public GameObject capsulePrefab;
+    public ARModelManager modelManager;
+
+    private string selectedModel = "Cube";
+    private bool isARReady = false; // ADDED: Prevents placement until planes detected
+
+    void Start()
+    {
+        // Optional: wait for first plane
+        // You can also hook into planeManager's planesChanged event
+    }
 
     void Update()
     {
-        // Handle input: mouse click in Editor, touch on device
+        // 1. Check if AR is actually ready (at least one plane detected)
+        if (planeManager != null && planeManager.trackables.count > 0)
+        {
+            isARReady = true;
+        }
+        else
+        {
+            isARReady = false; // No planes yet
+            return; // Exit – can't place objects
+        }
+
+        // 2. If AR is ready, check for touch/click input
         if (Input.GetMouseButtonDown(0) || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began))
         {
-            // Get the input position
             Vector2 inputPosition;
             if (Input.touchCount > 0)
                 inputPosition = Input.GetTouch(0).position;
             else
                 inputPosition = Input.mousePosition;
 
-            // Ignore if the input is over a UI element
+            // Prevent placing when clicking on UI
             if (EventSystem.current.IsPointerOverGameObject())
                 return;
 
-            // Perform AR raycast to find a plane
+            // 3. Raycast only against detected planes
             List<ARRaycastHit> hits = new List<ARRaycastHit>();
             if (raycastManager.Raycast(inputPosition, hits, TrackableType.PlaneWithinPolygon))
             {
                 Pose hitPose = hits[0].pose;
-                SpawnCubeAt(hitPose.position, hitPose.rotation);
+                hitPose.position += new Vector3(0.1f, 0.1f, 0);
+                SpawnSelectedModel(hitPose.position, hitPose.rotation);
             }
-            else
+            // NO FALLBACK: Don't place anywhere if no plane is hit
+            // This ensures placement only happens on real AR detection
+        }
+    }
+
+    void SpawnSelectedModel(Vector3 position, Quaternion rotation)
+    {
+        GameObject newModel = null;
+
+        switch (selectedModel)
+        {
+            case "Cube":
+                newModel = Instantiate(cubePrefab, position, rotation);
+                break;
+            case "Sphere":
+                newModel = Instantiate(spherePrefab, position, rotation);
+                break;
+            case "Capsule":
+                newModel = Instantiate(capsulePrefab, position, rotation);
+                break;
+            default:
+                newModel = Instantiate(cubePrefab, position, rotation);
+                break;
+        }
+
+        if (newModel != null)
+        {
+            newModel.AddComponent<ARAnchor>();
+
+            if (modelManager != null)
             {
-                // Optional: fallback for Editor when no planes are detected
-                // Spawn in front of camera (for testing without AR planes)
-                Vector3 fallbackPos = Camera.main.transform.position + Camera.main.transform.forward * 1.5f;
-                SpawnCubeAt(fallbackPos, Quaternion.identity);
+                if (modelManager.currentModel != null)
+                    Destroy(modelManager.currentModel);
+                modelManager.currentModel = newModel;
+                modelManager.currentModelName = selectedModel;
+                Debug.Log($"{selectedModel} spawned at {position}");
             }
         }
     }
 
-    void SpawnCubeAt(Vector3 position, Quaternion rotation)
+    // Called by the dropdown's OnValueChanged event
+    public void SetSelectedModel(int dropdownIndex)
     {
-        GameObject newCube = Instantiate(cubePrefab, position, rotation);
-        newCube.AddComponent<ARAnchor>();
-
-        // Update the model manager
-        if (modelManager != null)
+        switch (dropdownIndex)
         {
-            if (modelManager.currentModel != null)
-                Destroy(modelManager.currentModel);
-            modelManager.currentModel = newCube;
-            modelManager.currentModelName = "Cube";   // must match database name
-            Debug.Log("Cube spawned at " + position);
+            case 0:
+                selectedModel = "Cube";
+                break;
+            case 1:
+                selectedModel = "Sphere";
+                break;
+            case 2:
+                selectedModel = "Capsule";
+                break;
+            default:
+                selectedModel = "Cube";
+                break;
         }
+        Debug.Log($"Selected model changed to: {selectedModel}");
     }
 }
